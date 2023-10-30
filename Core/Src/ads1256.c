@@ -6,11 +6,15 @@
  
 #include "stm32f1xx_hal.h"          // ���������� HAL API
 #include <stdio.h>                  // printf...
-
+#include "tim.h"
 #include "ads1256_defs.h"           // ���������� ����������� ��������� � ������ ���������� ADS1256
 #include "ads1256.h"                // ��������� ��������� ������� � �����
 
-
+void delay_us (uint16_t us)
+{
+	__HAL_TIM_SET_COUNTER(&htim1,0);  // set the counter value a 0
+	while (__HAL_TIM_GET_COUNTER(&htim1) < us);  // wait for the counter to reach the us input in the parameter
+}
 
 //============================================================================
 // ���������� ��� (���������� �����)
@@ -43,15 +47,13 @@ extern SPI_HandleTypeDef SPI_ADC_HANDLE;
 //  Clock Polarity (CPOL) = Low
 //  Clock Phase    (CPHA) = 2 Edge
 
-
-
 //-------------------------------------
 // ���� DRDY (Data Ready - ���������� ����������)
 //-------------------------------------
 
 // �������� ����� DRDY (���������� ������ � �������) (� �����, ����������� ��� ��������� � ����������� �� ������� - �� ��������� � "����������" � "�����������", � ��. ���������� �������)
-#define  ADS1256_DRDY_PIN         GPIO_PIN_13
-#define  ADS1256_DRDY_PORT        GPIOD
+#define  ADS1256_DRDY_PIN         GPIO_PIN_10
+#define  ADS1256_DRDY_PORT        GPIOB
 
 #if defined(ADS1256_DRDY_PORT) && defined (ADS1256_DRDY_PIN)
   // �������� ����� �� ����������� ���� (����� ������ � ������������������, �������������� ��� ������ �����������; 
@@ -130,7 +132,7 @@ extern SPI_HandleTypeDef SPI_ADC_HANDLE;
 //-------------------------------------
 // ��������������, ������ ���� �������� ��������� ������� ���� SPI �� STM32Cube:
 #define  STM32_MCU_SYSCLK             72000000                /*������� ����*/
-#define  STM32_MCU_APBCLK             ((STM32_MCU_SYSCLK)/2)  /*������� ������������ ���� (����������)*/
+#define  STM32_MCU_APBCLK             ((STM32_MCU_SYSCLK/2))    /*������� ������������ ���� (����������)*/
 #define  STM32_SPI_BAUDRATEPRESCALER  64                      /*������������ APB ��������� ������� SPI*/
 
 // �����, ������� ���������� SPI, ��
@@ -229,10 +231,11 @@ extern SPI_HandleTypeDef SPI_ADC_HANDLE;
   // ����������� �� ���������� � ������������� � ���������� ������� ������� �������� ���� ���������
   void ADS1256_Log_DumpRegisters(uint8_t* caption)
   {
+   
     uint8_t value;
     printf("\r\n\r\n%s\r\n", caption);
     printf("--- ADS1256 driver / DUMP REGISTERS (start) ---\r\n");
-    
+    ADS1256_CS_ON();
     value = ADS1256_Command_ReadFromRegister(ADS1256_REGISTER_STATUS);
     printf("ADS1256_REGISTER_STATUS (0x00) = 0x%02X = 0b%c%c%c%c %c%c%c%c\r\n", value, BYTE_TO_BINARY(value));
 
@@ -267,6 +270,7 @@ extern SPI_HandleTypeDef SPI_ADC_HANDLE;
     printf("ADS1256_REGISTER_FSC2   (0x0A) = 0x%02X = 0b%c%c%c%c %c%c%c%c\r\n", value, BYTE_TO_BINARY(value));
 
     printf("--- ADS1256 driver / DUMP REGISTERS (end) ---\r\n");
+    ADS1256_CS_OFF();
   }  
 
 
@@ -324,7 +328,6 @@ void ADS1256_Command_Reset(void)
 {
   // ���������� �������� �� ���������� ���
   while(ADS1256_DRDY_BUSY());
-
   // �����
   uint8_t TxBuffer = ADS1256_COMMAND_RESET;
   // �������
@@ -355,16 +358,13 @@ uint8_t ADS1256_Command_ReadFromRegister(uint8_t regaddr)
   // ������
   TxBuffer = ADS1256_COMMAND_RREG | (regaddr & 0xF);                                        // Ukazivaem adres registra s kotorogo nachinaetsa chtenie
   assert_param(HAL_OK == HAL_SPI_Transmit(&SPI_ADC_HANDLE, &TxBuffer, 1, HAL_IO_TIMEOUT));  // Peredaem adress nachalnogo registra
-
   TxBuffer = 0;                                                                             // Ukazivaem kolichestvo registrov iz kotorih budut schitivatsa dannie (zapisivaetsa 1 + TO KOLICHESTVO KOTOROE UKAZIVAEM, V DANOM SLUCHAE POLUCHAETSA 1+0=1)
-  assert_param(HAL_OK == HAL_SPI_Transmit(&SPI_ADC_HANDLE, &TxBuffer, 1, HAL_IO_TIMEOUT));  // Peredaem kolichestvo registrov
-
+  assert_param(HAL_OK ==  HAL_SPI_Transmit(&SPI_ADC_HANDLE, &TxBuffer, 1, HAL_IO_TIMEOUT));  // Peredaem kolichestvo registrov
   // ������������ ��������, ���� ���������� ��� ���������� �����
   delay_us(ADS1256_DELAY_T6_US);
   
   // �����
   assert_param(HAL_OK == HAL_SPI_Receive(&SPI_ADC_HANDLE, &RxBuffer, 1, HAL_IO_TIMEOUT));   // Schitivaem dannie iz registra
-
   // ������������ "�������� ����� ���������", ���� ��� ������������� ����� ������ ��� �������� �������
   delay_us(ADS1256_DELAY_T11_US);
   
@@ -1489,16 +1489,15 @@ void ADS1256_API_DoSelfCalibration(void)
 // ������������� ���
 void ADS1256_Init(void)
 {
-  //HAL_Delay(100);
-  //ADS1256_LOG_DUMPREGISTERS("ADS1256_Init: ����� �������������� ���");
-  //HAL_Delay(1000);
+  HAL_Delay(100);
+  ADS1256_LOG_DUMPREGISTERS("ADS1256_Init: ");
+  HAL_Delay(1000);
   
-
   // ������� RESET: Reset Registers to Default Values
   ADS1256_API_Reset();
 
-  //ADS1256_LOG_DUMPREGISTERS("ADS1256_Init: �������� ��� ����� RESET");
-  //HAL_Delay(1000);
+  ADS1256_LOG_DUMPREGISTERS("ADS1256_Init: RESET");
+  HAL_Delay(1000);
   
   
   // ���������� ������� ����� � ������ "������ �������������" (��� ORDER � �������� STATUS) = MSB (��-���������)
@@ -1874,9 +1873,6 @@ extern __inline void ADS1256_INTERRUPT_OnDRDY(uint16_t GPIO_Pin)
                                                       ADS1256_DATA_FRAME_SIZE));
   }
 }
-
-
-
 //-------------------------------------
 // ���������� ���������� SPI, ������� ����������� ����� �������� ����� ������ ������ (3 ����).
 //  ����������: ������ ������� ������������� ���������� ��� CallBack � HAL-�������� SPI (������� ������ �� ��������� "����������").

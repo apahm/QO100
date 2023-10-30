@@ -77,6 +77,7 @@ void Error_Handler(void);
 #define RS_GPIO_Port GPIOA
 #define ADC_DRDY_Pin GPIO_PIN_10
 #define ADC_DRDY_GPIO_Port GPIOB
+#define ADC_DRDY_EXTI_IRQn EXTI15_10_IRQn
 #define ADC_RST_Pin GPIO_PIN_11
 #define ADC_RST_GPIO_Port GPIOB
 #define ADC_CS_Pin GPIO_PIN_12
